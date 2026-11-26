@@ -42,4 +42,20 @@ public class GlobalExceptionHandler {
         );
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(errorResponse);
     }
+
+    /**
+     * 일정당 최대 댓글 개수(10개) 초과 시 400 Bad Request 응답을 반환한다.
+     *
+     * @param exception 댓글 개수 초과 예외
+     * @return 에러 정보와 HTTP 400 상태 코드
+     */
+    @ExceptionHandler(CommentLimitExceededException.class)
+    public ResponseEntity<ErrorResponse> handleCommentLimitExceededException(CommentLimitExceededException exception) {
+        ErrorResponse errorResponse = new ErrorResponse(
+                HttpStatus.BAD_REQUEST.value(),
+                HttpStatus.BAD_REQUEST.getReasonPhrase(),
+                exception.getMessage()
+        );
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(errorResponse);
+    }
 }
