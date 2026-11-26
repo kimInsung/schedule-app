@@ -1,6 +1,7 @@
 package com.example.schedule.service;
 
 import com.example.schedule.common.exception.CommentLimitExceededException;
+import com.example.schedule.common.exception.InvalidInputException;
 import com.example.schedule.common.exception.ScheduleNotFoundException;
 import com.example.schedule.dto.CommentCreateRequestDto;
 import com.example.schedule.dto.CommentResponseDto;
@@ -10,6 +11,9 @@ import com.example.schedule.repository.ScheduleRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
@@ -17,6 +21,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDateTime;
+import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -151,6 +156,86 @@ class CommentServiceTest {
                 .hasMessageContaining("10");
 
         verify(commentRepository, never()).save(any(Comment.class));
+    }
+
+    @Test
+    @DisplayName("댓글 생성 시 요청 객체가 null이면 DB 조회 없이 InvalidInputException이 발생한다")
+    void createComment_withNullRequest_throwsInvalidInputException() {
+        assertThatThrownBy(() -> commentService.createComment(1L, null))
+                .isInstanceOf(InvalidInputException.class);
+
+        verify(scheduleRepository, never()).existsById(anyLong());
+        verify(commentRepository, never()).countByScheduleId(anyLong());
+        verify(commentRepository, never()).save(any(Comment.class));
+    }
+
+    @Test
+    @DisplayName("댓글 생성 시 내용이 100자(최대 길이 경계값)면 정상 저장된다")
+    void createComment_withContentsAt100Chars_savesComment() {
+        // given
+        Long scheduleId = 1L;
+        String contents100 = "c".repeat(100);
+        CommentCreateRequestDto requestDto = new CommentCreateRequestDto(
+                contents100, "이영희", "commentPw123"
+        );
+        LocalDateTime now = LocalDateTime.of(2026, 11, 26, 15, 0);
+        Comment savedComment = createCommentEntity(
+                10L, contents100, "이영희", "commentPw123", scheduleId, now, now
+        );
+
+        given(scheduleRepository.existsById(scheduleId)).willReturn(true);
+        given(commentRepository.countByScheduleId(scheduleId)).willReturn(0L);
+        given(commentRepository.save(any(Comment.class))).willReturn(savedComment);
+
+        // when
+        CommentResponseDto responseDto = commentService.createComment(scheduleId, requestDto);
+
+        // then
+        verify(commentRepository).save(any(Comment.class));
+        assertThat(responseDto.getContents()).hasSize(100);
+    }
+
+    @Test
+    @DisplayName("댓글 생성 시 내용이 101자(최대 길이 초과)면 DB 조회 없이 InvalidInputException이 발생한다")
+    void createComment_withContentsExceeding100Chars_throwsInvalidInputException() {
+        // given
+        CommentCreateRequestDto requestDto = new CommentCreateRequestDto(
+                "c".repeat(101), "이영희", "commentPw123"
+        );
+
+        // when & then
+        assertThatThrownBy(() -> commentService.createComment(1L, requestDto))
+                .isInstanceOf(InvalidInputException.class);
+
+        verify(scheduleRepository, never()).existsById(anyLong());
+        verify(commentRepository, never()).countByScheduleId(anyLong());
+        verify(commentRepository, never()).save(any(Comment.class));
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("invalidCreateCommentRequests")
+    @DisplayName("댓글 생성 시 필수 입력값이 null 또는 공백이면 DB 조회 없이 InvalidInputException이 발생한다")
+    void createComment_withNullOrBlankRequiredFields_throwsInvalidInputException(
+            String caseName,
+            CommentCreateRequestDto requestDto
+    ) {
+        assertThatThrownBy(() -> commentService.createComment(1L, requestDto))
+                .isInstanceOf(InvalidInputException.class);
+
+        verify(scheduleRepository, never()).existsById(anyLong());
+        verify(commentRepository, never()).countByScheduleId(anyLong());
+        verify(commentRepository, never()).save(any(Comment.class));
+    }
+
+    private static Stream<Arguments> invalidCreateCommentRequests() {
+        return Stream.of(
+                Arguments.of("contents is null", new CommentCreateRequestDto(null, "이영희", "commentPw123")),
+                Arguments.of("contents is blank", new CommentCreateRequestDto("   ", "이영희", "commentPw123")),
+                Arguments.of("author is null", new CommentCreateRequestDto("댓글 내용", null, "commentPw123")),
+                Arguments.of("author is blank", new CommentCreateRequestDto("댓글 내용", "   ", "commentPw123")),
+                Arguments.of("password is null", new CommentCreateRequestDto("댓글 내용", "이영희", null)),
+                Arguments.of("password is blank", new CommentCreateRequestDto("댓글 내용", "이영희", "   "))
+        );
     }
 
     private Comment createCommentEntity(

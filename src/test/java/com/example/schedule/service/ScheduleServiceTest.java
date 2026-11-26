@@ -1,5 +1,6 @@
 package com.example.schedule.service;
 
+import com.example.schedule.common.exception.InvalidInputException;
 import com.example.schedule.common.exception.InvalidPasswordException;
 import com.example.schedule.common.exception.ScheduleNotFoundException;
 import com.example.schedule.dto.CommentResponseDto;
@@ -15,6 +16,9 @@ import com.example.schedule.repository.ScheduleRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 import org.mockito.InjectMocks;
@@ -25,6 +29,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -289,26 +294,19 @@ class ScheduleServiceTest {
     }
 
     @Test
-    @DisplayName("일정 수정 시 요청 비밀번호가 null이면 InvalidPasswordException이 발생한다")
-    void updateSchedule_withNullPassword_throwsInvalidPasswordException() {
+    @DisplayName("일정 수정 시 요청 비밀번호가 null이면 DB 조회 없이 InvalidInputException이 발생한다")
+    void updateSchedule_withNullPassword_throwsInvalidInputException() {
         // given
-        LocalDateTime now = LocalDateTime.of(2026, 11, 26, 10, 0);
-        Schedule schedule = createScheduleEntity(
-                1L, "기존 제목", "기존 내용", "김인성", "secret1234", now, now
-        );
         ScheduleUpdateRequestDto requestDto = new ScheduleUpdateRequestDto(
                 "수정된 제목", "이영희", null
         );
 
-        given(scheduleRepository.findById(1L)).willReturn(Optional.of(schedule));
-
         // when & then
         assertThatThrownBy(() -> scheduleService.updateSchedule(1L, requestDto))
-                .isInstanceOf(InvalidPasswordException.class);
+                .isInstanceOf(InvalidInputException.class);
 
+        verify(scheduleRepository, never()).findById(anyLong());
         verify(scheduleRepository, never()).flush();
-        assertThat(schedule.getTitle()).isEqualTo("기존 제목");
-        assertThat(schedule.getAuthor()).isEqualTo("김인성");
     }
 
     @Test
@@ -371,23 +369,206 @@ class ScheduleServiceTest {
     }
 
     @Test
-    @DisplayName("일정 삭제 시 요청 비밀번호가 null이면 InvalidPasswordException이 발생하고 댓글 및 일정을 삭제하지 않는다")
-    void deleteSchedule_withNullPassword_throwsInvalidPasswordException() {
+    @DisplayName("일정 삭제 시 요청 비밀번호가 null이면 DB 조회 및 삭제 없이 InvalidInputException이 발생한다")
+    void deleteSchedule_withNullPassword_throwsInvalidInputException() {
         // given
-        LocalDateTime now = LocalDateTime.of(2026, 11, 26, 10, 0);
-        Schedule schedule = createScheduleEntity(
-                1L, "삭제 대상 일정", "내용", "김인성", "secret1234", now, now
-        );
         ScheduleDeleteRequestDto requestDto = new ScheduleDeleteRequestDto(null);
-
-        given(scheduleRepository.findById(1L)).willReturn(Optional.of(schedule));
 
         // when & then
         assertThatThrownBy(() -> scheduleService.deleteSchedule(1L, requestDto))
-                .isInstanceOf(InvalidPasswordException.class);
+                .isInstanceOf(InvalidInputException.class);
 
+        verify(scheduleRepository, never()).findById(anyLong());
         verify(commentRepository, never()).deleteAllByScheduleId(anyLong());
         verify(scheduleRepository, never()).delete(any(Schedule.class));
+    }
+
+    @Test
+    @DisplayName("일정 생성 시 요청 객체가 null이면 InvalidInputException이 발생한다")
+    void createSchedule_withNullRequest_throwsInvalidInputException() {
+        assertThatThrownBy(() -> scheduleService.createSchedule(null))
+                .isInstanceOf(InvalidInputException.class);
+
+        verify(scheduleRepository, never()).save(any(Schedule.class));
+    }
+
+    @Test
+    @DisplayName("일정 생성 시 제목 30자, 내용 200자(최대 길이 경계값)면 정상 저장된다")
+    void createSchedule_withBoundaryLengths_savesSchedule() {
+        // given
+        String title30 = "a".repeat(30);
+        String contents200 = "b".repeat(200);
+        ScheduleCreateRequestDto requestDto = new ScheduleCreateRequestDto(
+                title30, contents200, "김인성", "secret1234"
+        );
+        LocalDateTime now = LocalDateTime.of(2026, 11, 26, 10, 0);
+        Schedule savedSchedule = createScheduleEntity(
+                1L, title30, contents200, "김인성", "secret1234", now, now
+        );
+        given(scheduleRepository.save(any(Schedule.class))).willReturn(savedSchedule);
+
+        // when
+        ScheduleResponseDto responseDto = scheduleService.createSchedule(requestDto);
+
+        // then
+        verify(scheduleRepository).save(any(Schedule.class));
+        assertThat(responseDto.getTitle()).hasSize(30);
+        assertThat(responseDto.getContents()).hasSize(200);
+    }
+
+    @Test
+    @DisplayName("일정 생성 시 제목이 31자(최대 길이 초과)면 InvalidInputException이 발생하고 저장하지 않는다")
+    void createSchedule_withTitleExceeding30Chars_throwsInvalidInputException() {
+        // given
+        ScheduleCreateRequestDto requestDto = new ScheduleCreateRequestDto(
+                "a".repeat(31), "정상 내용", "김인성", "secret1234"
+        );
+
+        // when & then
+        assertThatThrownBy(() -> scheduleService.createSchedule(requestDto))
+                .isInstanceOf(InvalidInputException.class);
+
+        verify(scheduleRepository, never()).save(any(Schedule.class));
+    }
+
+    @Test
+    @DisplayName("일정 생성 시 내용이 201자(최대 길이 초과)면 InvalidInputException이 발생하고 저장하지 않는다")
+    void createSchedule_withContentsExceeding200Chars_throwsInvalidInputException() {
+        // given
+        ScheduleCreateRequestDto requestDto = new ScheduleCreateRequestDto(
+                "정상 제목", "b".repeat(201), "김인성", "secret1234"
+        );
+
+        // when & then
+        assertThatThrownBy(() -> scheduleService.createSchedule(requestDto))
+                .isInstanceOf(InvalidInputException.class);
+
+        verify(scheduleRepository, never()).save(any(Schedule.class));
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("invalidCreateScheduleRequests")
+    @DisplayName("일정 생성 시 필수 입력값이 null 또는 공백이면 InvalidInputException이 발생한다")
+    void createSchedule_withNullOrBlankRequiredFields_throwsInvalidInputException(
+            String caseName,
+            ScheduleCreateRequestDto requestDto
+    ) {
+        assertThatThrownBy(() -> scheduleService.createSchedule(requestDto))
+                .isInstanceOf(InvalidInputException.class);
+
+        verify(scheduleRepository, never()).save(any(Schedule.class));
+    }
+
+    @Test
+    @DisplayName("일정 수정 시 요청 객체가 null이면 InvalidInputException이 발생한다")
+    void updateSchedule_withNullRequest_throwsInvalidInputException() {
+        assertThatThrownBy(() -> scheduleService.updateSchedule(1L, null))
+                .isInstanceOf(InvalidInputException.class);
+
+        verify(scheduleRepository, never()).findById(anyLong());
+        verify(scheduleRepository, never()).flush();
+    }
+
+    @Test
+    @DisplayName("일정 수정 시 제목이 30자(최대 길이 경계값)면 정상 수정된다")
+    void updateSchedule_withTitleAt30Chars_updatesSchedule() {
+        // given
+        String title30 = "a".repeat(30);
+        LocalDateTime now = LocalDateTime.of(2026, 11, 26, 10, 0);
+        Schedule schedule = createScheduleEntity(
+                1L, "기존 제목", "기존 내용", "김인성", "secret1234", now, now
+        );
+        ScheduleUpdateRequestDto requestDto = new ScheduleUpdateRequestDto(
+                title30, "이영희", "secret1234"
+        );
+        given(scheduleRepository.findById(1L)).willReturn(Optional.of(schedule));
+
+        // when
+        ScheduleResponseDto result = scheduleService.updateSchedule(1L, requestDto);
+
+        // then
+        verify(scheduleRepository).flush();
+        assertThat(result.getTitle()).hasSize(30);
+    }
+
+    @Test
+    @DisplayName("일정 수정 시 제목이 31자(최대 길이 초과)면 DB 조회 없이 InvalidInputException이 발생한다")
+    void updateSchedule_withTitleExceeding30Chars_throwsInvalidInputException() {
+        // given
+        ScheduleUpdateRequestDto requestDto = new ScheduleUpdateRequestDto(
+                "a".repeat(31), "이영희", "secret1234"
+        );
+
+        // when & then
+        assertThatThrownBy(() -> scheduleService.updateSchedule(1L, requestDto))
+                .isInstanceOf(InvalidInputException.class);
+
+        verify(scheduleRepository, never()).findById(anyLong());
+        verify(scheduleRepository, never()).flush();
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("invalidUpdateScheduleRequests")
+    @DisplayName("일정 수정 시 필수 입력값이 null 또는 공백이면 DB 조회 없이 InvalidInputException이 발생한다")
+    void updateSchedule_withNullOrBlankRequiredFields_throwsInvalidInputException(
+            String caseName,
+            ScheduleUpdateRequestDto requestDto
+    ) {
+        assertThatThrownBy(() -> scheduleService.updateSchedule(1L, requestDto))
+                .isInstanceOf(InvalidInputException.class);
+
+        verify(scheduleRepository, never()).findById(anyLong());
+        verify(scheduleRepository, never()).flush();
+    }
+
+    @Test
+    @DisplayName("일정 삭제 시 요청 객체가 null이면 InvalidInputException이 발생한다")
+    void deleteSchedule_withNullRequest_throwsInvalidInputException() {
+        assertThatThrownBy(() -> scheduleService.deleteSchedule(1L, null))
+                .isInstanceOf(InvalidInputException.class);
+
+        verify(scheduleRepository, never()).findById(anyLong());
+        verify(commentRepository, never()).deleteAllByScheduleId(anyLong());
+        verify(scheduleRepository, never()).delete(any(Schedule.class));
+    }
+
+    @Test
+    @DisplayName("일정 삭제 시 요청 비밀번호가 공백이면 DB 조회 및 삭제 없이 InvalidInputException이 발생한다")
+    void deleteSchedule_withBlankPassword_throwsInvalidInputException() {
+        // given
+        ScheduleDeleteRequestDto requestDto = new ScheduleDeleteRequestDto("   ");
+
+        // when & then
+        assertThatThrownBy(() -> scheduleService.deleteSchedule(1L, requestDto))
+                .isInstanceOf(InvalidInputException.class);
+
+        verify(scheduleRepository, never()).findById(anyLong());
+        verify(commentRepository, never()).deleteAllByScheduleId(anyLong());
+        verify(scheduleRepository, never()).delete(any(Schedule.class));
+    }
+
+    private static Stream<Arguments> invalidCreateScheduleRequests() {
+        return Stream.of(
+                Arguments.of("title is null", new ScheduleCreateRequestDto(null, "내용", "김인성", "secret1234")),
+                Arguments.of("title is blank", new ScheduleCreateRequestDto("   ", "내용", "김인성", "secret1234")),
+                Arguments.of("contents is null", new ScheduleCreateRequestDto("제목", null, "김인성", "secret1234")),
+                Arguments.of("contents is blank", new ScheduleCreateRequestDto("제목", "   ", "김인성", "secret1234")),
+                Arguments.of("author is null", new ScheduleCreateRequestDto("제목", "내용", null, "secret1234")),
+                Arguments.of("author is blank", new ScheduleCreateRequestDto("제목", "내용", "   ", "secret1234")),
+                Arguments.of("password is null", new ScheduleCreateRequestDto("제목", "내용", "김인성", null)),
+                Arguments.of("password is blank", new ScheduleCreateRequestDto("제목", "내용", "김인성", "   "))
+        );
+    }
+
+    private static Stream<Arguments> invalidUpdateScheduleRequests() {
+        return Stream.of(
+                Arguments.of("title is null", new ScheduleUpdateRequestDto(null, "이영희", "secret1234")),
+                Arguments.of("title is blank", new ScheduleUpdateRequestDto("   ", "이영희", "secret1234")),
+                Arguments.of("author is null", new ScheduleUpdateRequestDto("수정 제목", null, "secret1234")),
+                Arguments.of("author is blank", new ScheduleUpdateRequestDto("수정 제목", "   ", "secret1234")),
+                Arguments.of("password is null", new ScheduleUpdateRequestDto("수정 제목", "이영희", null)),
+                Arguments.of("password is blank", new ScheduleUpdateRequestDto("수정 제목", "이영희", "   "))
+        );
     }
 
     @Test

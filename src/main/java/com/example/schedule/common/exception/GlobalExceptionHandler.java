@@ -19,12 +19,7 @@ public class GlobalExceptionHandler {
      */
     @ExceptionHandler(ScheduleNotFoundException.class)
     public ResponseEntity<ErrorResponse> handleScheduleNotFoundException(ScheduleNotFoundException exception) {
-        ErrorResponse errorResponse = new ErrorResponse(
-                HttpStatus.NOT_FOUND.value(),
-                HttpStatus.NOT_FOUND.getReasonPhrase(),
-                exception.getMessage()
-        );
-        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(errorResponse);
+        return buildErrorResponse(HttpStatus.NOT_FOUND, exception.getMessage());
     }
 
     /**
@@ -35,12 +30,7 @@ public class GlobalExceptionHandler {
      */
     @ExceptionHandler(InvalidPasswordException.class)
     public ResponseEntity<ErrorResponse> handleInvalidPasswordException(InvalidPasswordException exception) {
-        ErrorResponse errorResponse = new ErrorResponse(
-                HttpStatus.UNAUTHORIZED.value(),
-                HttpStatus.UNAUTHORIZED.getReasonPhrase(),
-                exception.getMessage()
-        );
-        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(errorResponse);
+        return buildErrorResponse(HttpStatus.UNAUTHORIZED, exception.getMessage());
     }
 
     /**
@@ -51,11 +41,26 @@ public class GlobalExceptionHandler {
      */
     @ExceptionHandler(CommentLimitExceededException.class)
     public ResponseEntity<ErrorResponse> handleCommentLimitExceededException(CommentLimitExceededException exception) {
+        return buildErrorResponse(HttpStatus.BAD_REQUEST, exception.getMessage());
+    }
+
+    /**
+     * 필수 입력값 누락, 공백 입력, 최대 길이 초과 등 입력값 검증 실패 시 400 Bad Request 응답을 반환한다.
+     *
+     * @param exception 입력값 검증 예외
+     * @return 에러 정보와 HTTP 400 상태 코드
+     */
+    @ExceptionHandler(InvalidInputException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidInputException(InvalidInputException exception) {
+        return buildErrorResponse(HttpStatus.BAD_REQUEST, exception.getMessage());
+    }
+
+    private ResponseEntity<ErrorResponse> buildErrorResponse(HttpStatus status, String message) {
         ErrorResponse errorResponse = new ErrorResponse(
-                HttpStatus.BAD_REQUEST.value(),
-                HttpStatus.BAD_REQUEST.getReasonPhrase(),
-                exception.getMessage()
+                status.value(),
+                status.getReasonPhrase(),
+                message
         );
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(errorResponse);
+        return ResponseEntity.status(status).body(errorResponse);
     }
 }

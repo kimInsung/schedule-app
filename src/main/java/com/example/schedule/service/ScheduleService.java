@@ -2,6 +2,7 @@ package com.example.schedule.service;
 
 import com.example.schedule.common.exception.InvalidPasswordException;
 import com.example.schedule.common.exception.ScheduleNotFoundException;
+import com.example.schedule.common.validation.InputValidator;
 import com.example.schedule.dto.CommentResponseDto;
 import com.example.schedule.dto.ScheduleCreateRequestDto;
 import com.example.schedule.dto.ScheduleDeleteRequestDto;
@@ -25,6 +26,9 @@ import java.util.List;
 @RequiredArgsConstructor
 public class ScheduleService {
 
+    private static final int MAX_TITLE_LENGTH = 30;
+    private static final int MAX_CONTENTS_LENGTH = 200;
+
     private final ScheduleRepository scheduleRepository;
     private final CommentRepository commentRepository;
 
@@ -36,6 +40,9 @@ public class ScheduleService {
      */
     @Transactional
     public ScheduleResponseDto createSchedule(ScheduleCreateRequestDto requestDto) {
+        // DB 저장 전에 요청 객체와 모든 필수 입력값 및 최대 길이를 먼저 검증
+        validateCreateRequest(requestDto);
+
         // 요청 DTO를 기반으로 일정 엔티티 생성
         Schedule schedule = new Schedule(
                 requestDto.getTitle(),
@@ -101,6 +108,9 @@ public class ScheduleService {
      */
     @Transactional
     public ScheduleResponseDto updateSchedule(Long id, ScheduleUpdateRequestDto requestDto) {
+        // DB 조회 및 비밀번호 비교 전에 수정 요청 객체와 필수 입력값 및 제목 최대 길이(30자)를 먼저 검증
+        validateUpdateRequest(requestDto);
+
         Schedule schedule = findScheduleById(id);
         validatePassword(schedule, requestDto.getPassword());
 
@@ -122,6 +132,9 @@ public class ScheduleService {
      */
     @Transactional
     public void deleteSchedule(Long id, ScheduleDeleteRequestDto requestDto) {
+        // DB 조회 및 비밀번호 비교 전에 삭제 요청 객체와 비밀번호 필수 입력값을 먼저 검증
+        validateDeleteRequest(requestDto);
+
         // 존재하지 않는 일정이면 404 예외 발생
         Schedule schedule = findScheduleById(id);
 
@@ -131,6 +144,29 @@ public class ScheduleService {
         // 비밀번호 검증 통과 후 연관된 댓글을 먼저 일괄 삭제하여 데이터 정합성 보장
         commentRepository.deleteAllByScheduleId(id);
         scheduleRepository.delete(schedule);
+    }
+
+    // 일정 생성 요청의 null, 공백 및 제목(30자)·내용(200자) 길이 제한 검증
+    private void validateCreateRequest(ScheduleCreateRequestDto requestDto) {
+        InputValidator.validateRequestNotNull(requestDto);
+        InputValidator.validateRequiredWithMaxLength(requestDto.getTitle(), "제목", MAX_TITLE_LENGTH);
+        InputValidator.validateRequiredWithMaxLength(requestDto.getContents(), "내용", MAX_CONTENTS_LENGTH);
+        InputValidator.validateRequired(requestDto.getAuthor(), "작성자");
+        InputValidator.validateRequired(requestDto.getPassword(), "비밀번호");
+    }
+
+    // 일정 수정 요청의 null, 공백 및 제목(30자) 길이 제한 검증
+    private void validateUpdateRequest(ScheduleUpdateRequestDto requestDto) {
+        InputValidator.validateRequestNotNull(requestDto);
+        InputValidator.validateRequiredWithMaxLength(requestDto.getTitle(), "제목", MAX_TITLE_LENGTH);
+        InputValidator.validateRequired(requestDto.getAuthor(), "작성자");
+        InputValidator.validateRequired(requestDto.getPassword(), "비밀번호");
+    }
+
+    // 일정 삭제 요청의 null 및 비밀번호 공백 여부 검증
+    private void validateDeleteRequest(ScheduleDeleteRequestDto requestDto) {
+        InputValidator.validateRequestNotNull(requestDto);
+        InputValidator.validateRequired(requestDto.getPassword(), "비밀번호");
     }
 
     // 요청 비밀번호가 null이거나 저장된 비밀번호와 다르면 401 예외 발생

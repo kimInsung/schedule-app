@@ -1,5 +1,6 @@
 package com.example.schedule.controller;
 
+import com.example.schedule.common.exception.InvalidInputException;
 import com.example.schedule.common.exception.InvalidPasswordException;
 import com.example.schedule.common.exception.ScheduleNotFoundException;
 import com.example.schedule.dto.CommentResponseDto;
@@ -12,6 +13,9 @@ import com.example.schedule.service.ScheduleService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.http.MediaType;
@@ -20,6 +24,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.stream.Stream;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -351,5 +356,173 @@ class ScheduleControllerTest {
                 .andExpect(jsonPath("$.status").value(404))
                 .andExpect(jsonPath("$.error").value("Not Found"))
                 .andExpect(jsonPath("$.message").value("해당 일정을 찾을 수 없습니다. id=999"));
+    }
+
+    @Test
+    @DisplayName("POST /api/schedules 요청 시 제목 30자, 내용 200자(경계값)면 201 Created를 반환한다")
+    void createSchedule_withBoundaryLengths_returnsCreated() throws Exception {
+        // given
+        String title30 = "a".repeat(30);
+        String contents200 = "b".repeat(200);
+        ScheduleCreateRequestDto requestDto = new ScheduleCreateRequestDto(
+                title30, contents200, "김인성", "secret1234"
+        );
+        LocalDateTime now = LocalDateTime.of(2026, 11, 26, 10, 0);
+        ScheduleResponseDto responseDto = new ScheduleResponseDto(
+                1L, title30, contents200, "김인성", now, now
+        );
+
+        given(scheduleService.createSchedule(any(ScheduleCreateRequestDto.class))).willReturn(responseDto);
+
+        // when & then
+        mockMvc.perform(post("/api/schedules")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(requestDto)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.title").value(title30))
+                .andExpect(jsonPath("$.contents").value(contents200));
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("invalidCreateScheduleRequests")
+    @DisplayName("POST /api/schedules 요청 시 길이 초과·null·공백 입력이면 400 Bad Request를 반환한다")
+    void createSchedule_withInvalidInput_returnsBadRequest(
+            String caseName,
+            ScheduleCreateRequestDto requestDto,
+            String errorMessage
+    ) throws Exception {
+        // given
+        given(scheduleService.createSchedule(any(ScheduleCreateRequestDto.class)))
+                .willThrow(new InvalidInputException(errorMessage));
+
+        // when & then
+        mockMvc.perform(post("/api/schedules")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(requestDto)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(400))
+                .andExpect(jsonPath("$.error").value("Bad Request"))
+                .andExpect(jsonPath("$.message").value(errorMessage));
+    }
+
+    @Test
+    @DisplayName("PATCH /api/schedules/{id} 요청 시 제목 30자(경계값)면 200 OK를 반환한다")
+    void updateSchedule_withTitleAt30Chars_returnsOk() throws Exception {
+        // given
+        String title30 = "a".repeat(30);
+        ScheduleUpdateRequestDto requestDto = new ScheduleUpdateRequestDto(
+                title30, "이영희", "secret1234"
+        );
+        LocalDateTime now = LocalDateTime.of(2026, 11, 26, 10, 0);
+        ScheduleResponseDto responseDto = new ScheduleResponseDto(
+                1L, title30, "기존 내용", "이영희", now, now
+        );
+
+        given(scheduleService.updateSchedule(eq(1L), any(ScheduleUpdateRequestDto.class)))
+                .willReturn(responseDto);
+
+        // when & then
+        mockMvc.perform(patch("/api/schedules/1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(requestDto)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.title").value(title30));
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("invalidUpdateScheduleRequests")
+    @DisplayName("PATCH /api/schedules/{id} 요청 시 길이 초과·null·공백 입력이면 400 Bad Request를 반환한다")
+    void updateSchedule_withInvalidInput_returnsBadRequest(
+            String caseName,
+            ScheduleUpdateRequestDto requestDto,
+            String errorMessage
+    ) throws Exception {
+        // given
+        given(scheduleService.updateSchedule(eq(1L), any(ScheduleUpdateRequestDto.class)))
+                .willThrow(new InvalidInputException(errorMessage));
+
+        // when & then
+        mockMvc.perform(patch("/api/schedules/1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(requestDto)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(400))
+                .andExpect(jsonPath("$.error").value("Bad Request"))
+                .andExpect(jsonPath("$.message").value(errorMessage));
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("invalidDeleteScheduleRequests")
+    @DisplayName("DELETE /api/schedules/{id} 요청 시 비밀번호가 null 또는 공백이면 400 Bad Request를 반환한다")
+    void deleteSchedule_withInvalidInput_returnsBadRequest(
+            String caseName,
+            ScheduleDeleteRequestDto requestDto,
+            String errorMessage
+    ) throws Exception {
+        // given
+        willThrow(new InvalidInputException(errorMessage))
+                .given(scheduleService).deleteSchedule(eq(1L), any(ScheduleDeleteRequestDto.class));
+
+        // when & then
+        mockMvc.perform(delete("/api/schedules/1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(requestDto)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(400))
+                .andExpect(jsonPath("$.error").value("Bad Request"))
+                .andExpect(jsonPath("$.message").value(errorMessage));
+    }
+
+    private static Stream<Arguments> invalidCreateScheduleRequests() {
+        return Stream.of(
+                Arguments.of("title 31 chars", new ScheduleCreateRequestDto("a".repeat(31), "내용", "김인성", "secret1234"),
+                        "제목 입력값은 최대 30자까지 입력할 수 있습니다."),
+                Arguments.of("contents 201 chars", new ScheduleCreateRequestDto("제목", "b".repeat(201), "김인성", "secret1234"),
+                        "내용 입력값은 최대 200자까지 입력할 수 있습니다."),
+                Arguments.of("title is null", new ScheduleCreateRequestDto(null, "내용", "김인성", "secret1234"),
+                        "제목 입력값은 비어 있거나 공백일 수 없습니다."),
+                Arguments.of("title is blank", new ScheduleCreateRequestDto("   ", "내용", "김인성", "secret1234"),
+                        "제목 입력값은 비어 있거나 공백일 수 없습니다."),
+                Arguments.of("contents is null", new ScheduleCreateRequestDto("제목", null, "김인성", "secret1234"),
+                        "내용 입력값은 비어 있거나 공백일 수 없습니다."),
+                Arguments.of("contents is blank", new ScheduleCreateRequestDto("제목", "   ", "김인성", "secret1234"),
+                        "내용 입력값은 비어 있거나 공백일 수 없습니다."),
+                Arguments.of("author is null", new ScheduleCreateRequestDto("제목", "내용", null, "secret1234"),
+                        "작성자 입력값은 비어 있거나 공백일 수 없습니다."),
+                Arguments.of("author is blank", new ScheduleCreateRequestDto("제목", "내용", "   ", "secret1234"),
+                        "작성자 입력값은 비어 있거나 공백일 수 없습니다."),
+                Arguments.of("password is null", new ScheduleCreateRequestDto("제목", "내용", "김인성", null),
+                        "비밀번호 입력값은 비어 있거나 공백일 수 없습니다."),
+                Arguments.of("password is blank", new ScheduleCreateRequestDto("제목", "내용", "김인성", "   "),
+                        "비밀번호 입력값은 비어 있거나 공백일 수 없습니다.")
+        );
+    }
+
+    private static Stream<Arguments> invalidUpdateScheduleRequests() {
+        return Stream.of(
+                Arguments.of("title 31 chars", new ScheduleUpdateRequestDto("a".repeat(31), "이영희", "secret1234"),
+                        "제목 입력값은 최대 30자까지 입력할 수 있습니다."),
+                Arguments.of("title is null", new ScheduleUpdateRequestDto(null, "이영희", "secret1234"),
+                        "제목 입력값은 비어 있거나 공백일 수 없습니다."),
+                Arguments.of("title is blank", new ScheduleUpdateRequestDto("   ", "이영희", "secret1234"),
+                        "제목 입력값은 비어 있거나 공백일 수 없습니다."),
+                Arguments.of("author is null", new ScheduleUpdateRequestDto("수정 제목", null, "secret1234"),
+                        "작성자 입력값은 비어 있거나 공백일 수 없습니다."),
+                Arguments.of("author is blank", new ScheduleUpdateRequestDto("수정 제목", "   ", "secret1234"),
+                        "작성자 입력값은 비어 있거나 공백일 수 없습니다."),
+                Arguments.of("password is null", new ScheduleUpdateRequestDto("수정 제목", "이영희", null),
+                        "비밀번호 입력값은 비어 있거나 공백일 수 없습니다."),
+                Arguments.of("password is blank", new ScheduleUpdateRequestDto("수정 제목", "이영희", "   "),
+                        "비밀번호 입력값은 비어 있거나 공백일 수 없습니다.")
+        );
+    }
+
+    private static Stream<Arguments> invalidDeleteScheduleRequests() {
+        return Stream.of(
+                Arguments.of("password is null", new ScheduleDeleteRequestDto(null),
+                        "비밀번호 입력값은 비어 있거나 공백일 수 없습니다."),
+                Arguments.of("password is blank", new ScheduleDeleteRequestDto("   "),
+                        "비밀번호 입력값은 비어 있거나 공백일 수 없습니다.")
+        );
     }
 }
