@@ -26,4 +26,20 @@ public class GlobalExceptionHandler {
         );
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(errorResponse);
     }
+
+    /**
+     * 비밀번호 불일치 시 401 Unauthorized 응답을 반환한다.
+     *
+     * @param exception 비밀번호 불일치 예외
+     * @return 에러 정보와 HTTP 401 상태 코드
+     */
+    @ExceptionHandler(InvalidPasswordException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidPasswordException(InvalidPasswordException exception) {
+        ErrorResponse errorResponse = new ErrorResponse(
+                HttpStatus.UNAUTHORIZED.value(),
+                HttpStatus.UNAUTHORIZED.getReasonPhrase(),
+                exception.getMessage()
+        );
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(errorResponse);
+    }
 }

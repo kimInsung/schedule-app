@@ -42,4 +42,10 @@ public class Schedule extends BaseEntity {
         this.author = author;
         this.password = password;
     }
+
+    // 수정 가능한 필드(title, author)만 변경하고 contents 및 createdAt은 변경하지 않음
+    public void update(String title, String author) {
+        this.title = title;
+        this.author = author;
+    }
 }

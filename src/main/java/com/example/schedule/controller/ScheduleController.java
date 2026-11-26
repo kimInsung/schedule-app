@@ -2,11 +2,13 @@ package com.example.schedule.controller;
 
 import com.example.schedule.dto.ScheduleCreateRequestDto;
 import com.example.schedule.dto.ScheduleResponseDto;
+import com.example.schedule.dto.ScheduleUpdateRequestDto;
 import com.example.schedule.service.ScheduleService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -64,6 +66,23 @@ public class ScheduleController {
     public ResponseEntity<ScheduleResponseDto> getSchedule(@PathVariable Long id) {
         // 단건 조회 및 미존재 예외 처리는 서비스 계층에 위임하고 DTO만 반환
         ScheduleResponseDto responseDto = scheduleService.getSchedule(id);
+        return ResponseEntity.ok(responseDto);
+    }
+
+    /**
+     * 지정한 ID의 일정을 수정한다.
+     *
+     * @param id 수정할 일정 ID
+     * @param requestDto 일정 수정 요청 본문 (title, author, password)
+     * @return 수정된 일정 정보와 HTTP 200 OK 상태 코드
+     */
+    @PatchMapping("/{id}")
+    public ResponseEntity<ScheduleResponseDto> updateSchedule(
+            @PathVariable Long id,
+            @RequestBody ScheduleUpdateRequestDto requestDto
+    ) {
+        // 비밀번호 검증, 제한 수정, flush 반영은 서비스 계층에 위임하고 응답 DTO만 반환
+        ScheduleResponseDto responseDto = scheduleService.updateSchedule(id, requestDto);
         return ResponseEntity.ok(responseDto);
     }
 }

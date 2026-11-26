@@ -1,8 +1,10 @@
 package com.example.schedule.controller;
 
+import com.example.schedule.common.exception.InvalidPasswordException;
 import com.example.schedule.common.exception.ScheduleNotFoundException;
 import com.example.schedule.dto.ScheduleCreateRequestDto;
 import com.example.schedule.dto.ScheduleResponseDto;
+import com.example.schedule.dto.ScheduleUpdateRequestDto;
 import com.example.schedule.service.ScheduleService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.DisplayName;
@@ -17,10 +19,12 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -163,6 +167,78 @@ class ScheduleControllerTest {
 
         // when & then
         mockMvc.perform(get("/api/schedules/999"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.status").value(404))
+                .andExpect(jsonPath("$.error").value("Not Found"))
+                .andExpect(jsonPath("$.message").value("해당 일정을 찾을 수 없습니다. id=999"));
+    }
+
+    @Test
+    @DisplayName("PATCH /api/schedules/{id} 요청 시 수정 성공하면 200 OK와 비밀번호가 제외된 수정 응답을 반환한다")
+    void updateSchedule_withValidRequest_returnsOkWithoutPassword() throws Exception {
+        // given
+        ScheduleUpdateRequestDto requestDto = new ScheduleUpdateRequestDto(
+                "수정된 제목", "이영희", "secret1234"
+        );
+        LocalDateTime createdAt = LocalDateTime.of(2026, 11, 25, 9, 0);
+        LocalDateTime modifiedAt = LocalDateTime.of(2026, 11, 26, 10, 30);
+        ScheduleResponseDto responseDto = new ScheduleResponseDto(
+                1L, "수정된 제목", "기존 내용", "이영희", createdAt, modifiedAt
+        );
+
+        given(scheduleService.updateSchedule(eq(1L), any(ScheduleUpdateRequestDto.class)))
+                .willReturn(responseDto);
+
+        // when & then
+        mockMvc.perform(patch("/api/schedules/1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(requestDto)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(1L))
+                .andExpect(jsonPath("$.title").value("수정된 제목"))
+                .andExpect(jsonPath("$.contents").value("기존 내용"))
+                .andExpect(jsonPath("$.author").value("이영희"))
+                .andExpect(jsonPath("$.createdAt").value("2026-11-25T09:00:00"))
+                .andExpect(jsonPath("$.modifiedAt").value("2026-11-26T10:30:00"))
+                .andExpect(jsonPath("$.password").doesNotExist());
+
+        verify(scheduleService).updateSchedule(eq(1L), any(ScheduleUpdateRequestDto.class));
+    }
+
+    @Test
+    @DisplayName("PATCH /api/schedules/{id} 요청 시 비밀번호가 일치하지 않으면 401 Unauthorized를 반환한다")
+    void updateSchedule_withInvalidPassword_returnsUnauthorized() throws Exception {
+        // given
+        ScheduleUpdateRequestDto requestDto = new ScheduleUpdateRequestDto(
+                "수정된 제목", "이영희", "wrong-password"
+        );
+        given(scheduleService.updateSchedule(eq(1L), any(ScheduleUpdateRequestDto.class)))
+                .willThrow(new InvalidPasswordException());
+
+        // when & then
+        mockMvc.perform(patch("/api/schedules/1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(requestDto)))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.status").value(401))
+                .andExpect(jsonPath("$.error").value("Unauthorized"))
+                .andExpect(jsonPath("$.message").value("비밀번호가 일치하지 않습니다."));
+    }
+
+    @Test
+    @DisplayName("PATCH /api/schedules/{id} 요청 시 존재하지 않는 ID면 404 Not Found를 반환한다")
+    void updateSchedule_withNonExistingId_returnsNotFound() throws Exception {
+        // given
+        ScheduleUpdateRequestDto requestDto = new ScheduleUpdateRequestDto(
+                "수정된 제목", "이영희", "secret1234"
+        );
+        given(scheduleService.updateSchedule(eq(999L), any(ScheduleUpdateRequestDto.class)))
+                .willThrow(new ScheduleNotFoundException(999L));
+
+        // when & then
+        mockMvc.perform(patch("/api/schedules/999")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(requestDto)))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.status").value(404))
                 .andExpect(jsonPath("$.error").value("Not Found"))

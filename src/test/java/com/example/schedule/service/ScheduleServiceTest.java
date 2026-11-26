@@ -1,8 +1,10 @@
 package com.example.schedule.service;
 
+import com.example.schedule.common.exception.InvalidPasswordException;
 import com.example.schedule.common.exception.ScheduleNotFoundException;
 import com.example.schedule.dto.ScheduleCreateRequestDto;
 import com.example.schedule.dto.ScheduleResponseDto;
+import com.example.schedule.dto.ScheduleUpdateRequestDto;
 import com.example.schedule.entity.Schedule;
 import com.example.schedule.repository.ScheduleRepository;
 import org.junit.jupiter.api.DisplayName;
@@ -23,6 +25,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.willAnswer;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
@@ -178,6 +181,104 @@ class ScheduleServiceTest {
         assertThatThrownBy(() -> scheduleService.getSchedule(999L))
                 .isInstanceOf(ScheduleNotFoundException.class)
                 .hasMessageContaining("999");
+    }
+
+    @Test
+    @DisplayName("일정 수정 성공 시 title과 author만 변경하고 contents와 createdAt은 유지하며 flush 후 modifiedAt을 반영한다")
+    void updateSchedule_withValidPassword_updatesTitleAndAuthorAndFlushes() {
+        // given
+        LocalDateTime createdAt = LocalDateTime.of(2026, 11, 25, 9, 0);
+        LocalDateTime updatedModifiedAt = LocalDateTime.of(2026, 11, 26, 10, 30);
+        Schedule schedule = createScheduleEntity(
+                1L, "기존 제목", "기존 내용", "김인성", "secret1234", createdAt, createdAt
+        );
+        ScheduleUpdateRequestDto requestDto = new ScheduleUpdateRequestDto(
+                "수정된 제목", "이영희", "secret1234"
+        );
+
+        given(scheduleRepository.findById(1L)).willReturn(Optional.of(schedule));
+        // flush 호출 시 JPA Auditing이 modifiedAt을 갱신하는 동작을 시뮬레이션
+        willAnswer(invocation -> {
+            ReflectionTestUtils.setField(schedule, "modifiedAt", updatedModifiedAt);
+            return null;
+        }).given(scheduleRepository).flush();
+
+        // when
+        ScheduleResponseDto result = scheduleService.updateSchedule(1L, requestDto);
+
+        // then
+        verify(scheduleRepository).findById(1L);
+        verify(scheduleRepository).flush();
+
+        assertThat(result.getId()).isEqualTo(1L);
+        assertThat(result.getTitle()).isEqualTo("수정된 제목");
+        assertThat(result.getAuthor()).isEqualTo("이영희");
+        assertThat(result.getContents()).isEqualTo("기존 내용");
+        assertThat(result.getCreatedAt()).isEqualTo(createdAt);
+        assertThat(result.getModifiedAt()).isEqualTo(updatedModifiedAt);
+    }
+
+    @Test
+    @DisplayName("일정 수정 시 비밀번호가 일치하지 않으면 InvalidPasswordException이 발생한다")
+    void updateSchedule_withInvalidPassword_throwsInvalidPasswordException() {
+        // given
+        LocalDateTime now = LocalDateTime.of(2026, 11, 26, 10, 0);
+        Schedule schedule = createScheduleEntity(
+                1L, "기존 제목", "기존 내용", "김인성", "secret1234", now, now
+        );
+        ScheduleUpdateRequestDto requestDto = new ScheduleUpdateRequestDto(
+                "수정된 제목", "이영희", "wrong-password"
+        );
+
+        given(scheduleRepository.findById(1L)).willReturn(Optional.of(schedule));
+
+        // when & then
+        assertThatThrownBy(() -> scheduleService.updateSchedule(1L, requestDto))
+                .isInstanceOf(InvalidPasswordException.class);
+
+        verify(scheduleRepository, never()).flush();
+        assertThat(schedule.getTitle()).isEqualTo("기존 제목");
+        assertThat(schedule.getAuthor()).isEqualTo("김인성");
+    }
+
+    @Test
+    @DisplayName("일정 수정 시 요청 비밀번호가 null이면 InvalidPasswordException이 발생한다")
+    void updateSchedule_withNullPassword_throwsInvalidPasswordException() {
+        // given
+        LocalDateTime now = LocalDateTime.of(2026, 11, 26, 10, 0);
+        Schedule schedule = createScheduleEntity(
+                1L, "기존 제목", "기존 내용", "김인성", "secret1234", now, now
+        );
+        ScheduleUpdateRequestDto requestDto = new ScheduleUpdateRequestDto(
+                "수정된 제목", "이영희", null
+        );
+
+        given(scheduleRepository.findById(1L)).willReturn(Optional.of(schedule));
+
+        // when & then
+        assertThatThrownBy(() -> scheduleService.updateSchedule(1L, requestDto))
+                .isInstanceOf(InvalidPasswordException.class);
+
+        verify(scheduleRepository, never()).flush();
+        assertThat(schedule.getTitle()).isEqualTo("기존 제목");
+        assertThat(schedule.getAuthor()).isEqualTo("김인성");
+    }
+
+    @Test
+    @DisplayName("존재하지 않는 ID로 일정 수정 시 ScheduleNotFoundException이 발생한다")
+    void updateSchedule_withNonExistingId_throwsScheduleNotFoundException() {
+        // given
+        ScheduleUpdateRequestDto requestDto = new ScheduleUpdateRequestDto(
+                "수정된 제목", "이영희", "secret1234"
+        );
+        given(scheduleRepository.findById(999L)).willReturn(Optional.empty());
+
+        // when & then
+        assertThatThrownBy(() -> scheduleService.updateSchedule(999L, requestDto))
+                .isInstanceOf(ScheduleNotFoundException.class)
+                .hasMessageContaining("999");
+
+        verify(scheduleRepository, never()).flush();
     }
 
     private Schedule createScheduleEntity(

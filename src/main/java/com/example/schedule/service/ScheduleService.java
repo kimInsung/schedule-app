@@ -1,8 +1,10 @@
 package com.example.schedule.service;
 
+import com.example.schedule.common.exception.InvalidPasswordException;
 import com.example.schedule.common.exception.ScheduleNotFoundException;
 import com.example.schedule.dto.ScheduleCreateRequestDto;
 import com.example.schedule.dto.ScheduleResponseDto;
+import com.example.schedule.dto.ScheduleUpdateRequestDto;
 import com.example.schedule.entity.Schedule;
 import com.example.schedule.repository.ScheduleRepository;
 import lombok.RequiredArgsConstructor;
@@ -69,10 +71,39 @@ public class ScheduleService {
      */
     @Transactional(readOnly = true)
     public ScheduleResponseDto getSchedule(Long id) {
-        // 존재하지 않는 ID 조회 시 커스텀 예외를 발생시켜 전역 예외 처리기에서 404 응답 처리
-        Schedule schedule = scheduleRepository.findById(id)
-                .orElseThrow(() -> new ScheduleNotFoundException(id));
+        Schedule schedule = findScheduleById(id);
+        return ScheduleResponseDto.from(schedule);
+    }
+
+    /**
+     * 지정한 ID의 일정을 수정한다.
+     * 비밀번호 일치 시에만 제목(title)과 작성자명(author)을 변경하며, flush로 갱신된 수정일시를 응답에 반영한다.
+     *
+     * @param id 수정할 일정 ID
+     * @param requestDto 수정 요청 정보 (title, author, password)
+     * @return 비밀번호를 제외한 수정 완료된 일정 응답 DTO
+     */
+    @Transactional
+    public ScheduleResponseDto updateSchedule(Long id, ScheduleUpdateRequestDto requestDto) {
+        Schedule schedule = findScheduleById(id);
+
+        // 요청 비밀번호가 null이거나 저장된 비밀번호와 다르면 401 예외 발생
+        if (requestDto.getPassword() == null || !requestDto.getPassword().equals(schedule.getPassword())) {
+            throw new InvalidPasswordException();
+        }
+
+        // 허용된 필드(title, author)만 제한적으로 수정
+        schedule.update(requestDto.getTitle(), requestDto.getAuthor());
+
+        // 트랜잭션 커밋 전 Dirty Checking을 즉시 DB에 반영하여 JPA Auditing의 modifiedAt 갱신값을 DTO에 포함
+        scheduleRepository.flush();
 
         return ScheduleResponseDto.from(schedule);
+    }
+
+    // 존재하지 않는 ID 조회 시 커스텀 예외를 발생시켜 전역 예외 처리기에서 404 응답 처리
+    private Schedule findScheduleById(Long id) {
+        return scheduleRepository.findById(id)
+                .orElseThrow(() -> new ScheduleNotFoundException(id));
     }
 }
