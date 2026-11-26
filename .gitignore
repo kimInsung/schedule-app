@@ -1,0 +1,31 @@
+HELP.md
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+!**/src/main/**/build/
+!**/src/test/**/build/
+
+### IntelliJ IDEA ###
+.idea/
+*.iws
+*.iml
+*.ipr
+out/
+
+### VS Code ###
+.vscode/
+
+### Environment & Secrets ###
+.env
+.env.*
+application-secret.yml
+application-secret.yaml
+application-secret.properties
+**/application-secret.yml
+**/application-secret.yaml
+**/application-secret.properties
+
+### OS & Logs ###
+.DS_Store
+Thumbs.db
+*.log
