@@ -3,6 +3,7 @@ package com.example.schedule.controller;
 import com.example.schedule.common.exception.InvalidPasswordException;
 import com.example.schedule.common.exception.ScheduleNotFoundException;
 import com.example.schedule.dto.ScheduleCreateRequestDto;
+import com.example.schedule.dto.ScheduleDeleteRequestDto;
 import com.example.schedule.dto.ScheduleResponseDto;
 import com.example.schedule.dto.ScheduleUpdateRequestDto;
 import com.example.schedule.service.ScheduleService;
@@ -22,10 +23,14 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.willDoNothing;
+import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.verify;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -237,6 +242,59 @@ class ScheduleControllerTest {
 
         // when & then
         mockMvc.perform(patch("/api/schedules/999")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(requestDto)))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.status").value(404))
+                .andExpect(jsonPath("$.error").value("Not Found"))
+                .andExpect(jsonPath("$.message").value("해당 일정을 찾을 수 없습니다. id=999"));
+    }
+
+    @Test
+    @DisplayName("DELETE /api/schedules/{id} 요청 시 삭제 성공하면 204 No Content와 빈 본문을 반환한다")
+    void deleteSchedule_withValidPassword_returnsNoContentWithoutBody() throws Exception {
+        // given
+        ScheduleDeleteRequestDto requestDto = new ScheduleDeleteRequestDto("secret1234");
+        willDoNothing().given(scheduleService).deleteSchedule(eq(1L), any(ScheduleDeleteRequestDto.class));
+
+        // when & then
+        mockMvc.perform(delete("/api/schedules/1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(requestDto)))
+                .andExpect(status().isNoContent())
+                .andExpect(content().string(""));
+
+        verify(scheduleService).deleteSchedule(eq(1L), any(ScheduleDeleteRequestDto.class));
+    }
+
+    @Test
+    @DisplayName("DELETE /api/schedules/{id} 요청 시 비밀번호가 일치하지 않으면 401 Unauthorized를 반환한다")
+    void deleteSchedule_withInvalidPassword_returnsUnauthorized() throws Exception {
+        // given
+        ScheduleDeleteRequestDto requestDto = new ScheduleDeleteRequestDto("wrong-password");
+        willThrow(new InvalidPasswordException())
+                .given(scheduleService).deleteSchedule(eq(1L), any(ScheduleDeleteRequestDto.class));
+
+        // when & then
+        mockMvc.perform(delete("/api/schedules/1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(requestDto)))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.status").value(401))
+                .andExpect(jsonPath("$.error").value("Unauthorized"))
+                .andExpect(jsonPath("$.message").value("비밀번호가 일치하지 않습니다."));
+    }
+
+    @Test
+    @DisplayName("DELETE /api/schedules/{id} 요청 시 존재하지 않는 ID면 404 Not Found를 반환한다")
+    void deleteSchedule_withNonExistingId_returnsNotFound() throws Exception {
+        // given
+        ScheduleDeleteRequestDto requestDto = new ScheduleDeleteRequestDto("secret1234");
+        willThrow(new ScheduleNotFoundException(999L))
+                .given(scheduleService).deleteSchedule(eq(999L), any(ScheduleDeleteRequestDto.class));
+
+        // when & then
+        mockMvc.perform(delete("/api/schedules/999")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(requestDto)))
                 .andExpect(status().isNotFound())

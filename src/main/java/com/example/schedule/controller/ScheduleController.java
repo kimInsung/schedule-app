@@ -1,12 +1,14 @@
 package com.example.schedule.controller;
 
 import com.example.schedule.dto.ScheduleCreateRequestDto;
+import com.example.schedule.dto.ScheduleDeleteRequestDto;
 import com.example.schedule.dto.ScheduleResponseDto;
 import com.example.schedule.dto.ScheduleUpdateRequestDto;
 import com.example.schedule.service.ScheduleService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -84,5 +86,22 @@ public class ScheduleController {
         // 비밀번호 검증, 제한 수정, flush 반영은 서비스 계층에 위임하고 응답 DTO만 반환
         ScheduleResponseDto responseDto = scheduleService.updateSchedule(id, requestDto);
         return ResponseEntity.ok(responseDto);
+    }
+
+    /**
+     * 지정한 ID의 일정을 삭제한다.
+     *
+     * @param id 삭제할 일정 ID
+     * @param requestDto 일정 삭제 요청 본문 (password)
+     * @return 본문 없이 HTTP 204 No Content 상태 코드
+     */
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> deleteSchedule(
+            @PathVariable Long id,
+            @RequestBody ScheduleDeleteRequestDto requestDto
+    ) {
+        // 일정 조회, 비밀번호 검증 및 삭제 처리는 서비스 계층에 위임하고 본문 없이 204 No Content 반환
+        scheduleService.deleteSchedule(id, requestDto);
+        return ResponseEntity.noContent().build();
     }
 }

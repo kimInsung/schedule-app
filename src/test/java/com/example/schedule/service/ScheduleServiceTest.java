@@ -3,6 +3,7 @@ package com.example.schedule.service;
 import com.example.schedule.common.exception.InvalidPasswordException;
 import com.example.schedule.common.exception.ScheduleNotFoundException;
 import com.example.schedule.dto.ScheduleCreateRequestDto;
+import com.example.schedule.dto.ScheduleDeleteRequestDto;
 import com.example.schedule.dto.ScheduleResponseDto;
 import com.example.schedule.dto.ScheduleUpdateRequestDto;
 import com.example.schedule.entity.Schedule;
@@ -279,6 +280,79 @@ class ScheduleServiceTest {
                 .hasMessageContaining("999");
 
         verify(scheduleRepository, never()).flush();
+    }
+
+    @Test
+    @DisplayName("일정 삭제 성공 시 비밀번호 검증 후 Repository의 delete를 호출한다")
+    void deleteSchedule_withValidPassword_deletesSchedule() {
+        // given
+        LocalDateTime now = LocalDateTime.of(2026, 11, 26, 10, 0);
+        Schedule schedule = createScheduleEntity(
+                1L, "삭제 대상 일정", "내용", "김인성", "secret1234", now, now
+        );
+        ScheduleDeleteRequestDto requestDto = new ScheduleDeleteRequestDto("secret1234");
+
+        given(scheduleRepository.findById(1L)).willReturn(Optional.of(schedule));
+
+        // when
+        scheduleService.deleteSchedule(1L, requestDto);
+
+        // then
+        verify(scheduleRepository).findById(1L);
+        verify(scheduleRepository).delete(schedule);
+    }
+
+    @Test
+    @DisplayName("일정 삭제 시 비밀번호가 일치하지 않으면 InvalidPasswordException이 발생하고 삭제를 호출하지 않는다")
+    void deleteSchedule_withInvalidPassword_throwsInvalidPasswordException() {
+        // given
+        LocalDateTime now = LocalDateTime.of(2026, 11, 26, 10, 0);
+        Schedule schedule = createScheduleEntity(
+                1L, "삭제 대상 일정", "내용", "김인성", "secret1234", now, now
+        );
+        ScheduleDeleteRequestDto requestDto = new ScheduleDeleteRequestDto("wrong-password");
+
+        given(scheduleRepository.findById(1L)).willReturn(Optional.of(schedule));
+
+        // when & then
+        assertThatThrownBy(() -> scheduleService.deleteSchedule(1L, requestDto))
+                .isInstanceOf(InvalidPasswordException.class);
+
+        verify(scheduleRepository, never()).delete(any(Schedule.class));
+    }
+
+    @Test
+    @DisplayName("일정 삭제 시 요청 비밀번호가 null이면 InvalidPasswordException이 발생하고 삭제를 호출하지 않는다")
+    void deleteSchedule_withNullPassword_throwsInvalidPasswordException() {
+        // given
+        LocalDateTime now = LocalDateTime.of(2026, 11, 26, 10, 0);
+        Schedule schedule = createScheduleEntity(
+                1L, "삭제 대상 일정", "내용", "김인성", "secret1234", now, now
+        );
+        ScheduleDeleteRequestDto requestDto = new ScheduleDeleteRequestDto(null);
+
+        given(scheduleRepository.findById(1L)).willReturn(Optional.of(schedule));
+
+        // when & then
+        assertThatThrownBy(() -> scheduleService.deleteSchedule(1L, requestDto))
+                .isInstanceOf(InvalidPasswordException.class);
+
+        verify(scheduleRepository, never()).delete(any(Schedule.class));
+    }
+
+    @Test
+    @DisplayName("존재하지 않는 ID로 일정 삭제 시 ScheduleNotFoundException이 발생하고 삭제를 호출하지 않는다")
+    void deleteSchedule_withNonExistingId_throwsScheduleNotFoundException() {
+        // given
+        ScheduleDeleteRequestDto requestDto = new ScheduleDeleteRequestDto("secret1234");
+        given(scheduleRepository.findById(999L)).willReturn(Optional.empty());
+
+        // when & then
+        assertThatThrownBy(() -> scheduleService.deleteSchedule(999L, requestDto))
+                .isInstanceOf(ScheduleNotFoundException.class)
+                .hasMessageContaining("999");
+
+        verify(scheduleRepository, never()).delete(any(Schedule.class));
     }
 
     private Schedule createScheduleEntity(

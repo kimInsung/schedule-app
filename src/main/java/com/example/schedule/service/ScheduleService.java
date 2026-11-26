@@ -3,6 +3,7 @@ package com.example.schedule.service;
 import com.example.schedule.common.exception.InvalidPasswordException;
 import com.example.schedule.common.exception.ScheduleNotFoundException;
 import com.example.schedule.dto.ScheduleCreateRequestDto;
+import com.example.schedule.dto.ScheduleDeleteRequestDto;
 import com.example.schedule.dto.ScheduleResponseDto;
 import com.example.schedule.dto.ScheduleUpdateRequestDto;
 import com.example.schedule.entity.Schedule;
@@ -86,11 +87,7 @@ public class ScheduleService {
     @Transactional
     public ScheduleResponseDto updateSchedule(Long id, ScheduleUpdateRequestDto requestDto) {
         Schedule schedule = findScheduleById(id);
-
-        // 요청 비밀번호가 null이거나 저장된 비밀번호와 다르면 401 예외 발생
-        if (requestDto.getPassword() == null || !requestDto.getPassword().equals(schedule.getPassword())) {
-            throw new InvalidPasswordException();
-        }
+        validatePassword(schedule, requestDto.getPassword());
 
         // 허용된 필드(title, author)만 제한적으로 수정
         schedule.update(requestDto.getTitle(), requestDto.getAuthor());
@@ -99,6 +96,31 @@ public class ScheduleService {
         scheduleRepository.flush();
 
         return ScheduleResponseDto.from(schedule);
+    }
+
+    /**
+     * 지정한 ID의 일정을 삭제한다.
+     * 일정 존재 여부를 확인하고 비밀번호가 일치하는 경우에만 삭제를 수행한다.
+     *
+     * @param id 삭제할 일정 ID
+     * @param requestDto 삭제 요청 정보 (password)
+     */
+    @Transactional
+    public void deleteSchedule(Long id, ScheduleDeleteRequestDto requestDto) {
+        // 존재하지 않는 일정이면 404 예외 발생
+        Schedule schedule = findScheduleById(id);
+
+        // 본인 확인용 비밀번호 일치 여부를 검증한 뒤에만 삭제 진행
+        validatePassword(schedule, requestDto.getPassword());
+
+        scheduleRepository.delete(schedule);
+    }
+
+    // 요청 비밀번호가 null이거나 저장된 비밀번호와 다르면 401 예외 발생
+    private void validatePassword(Schedule schedule, String requestPassword) {
+        if (requestPassword == null || !requestPassword.equals(schedule.getPassword())) {
+            throw new InvalidPasswordException();
+        }
     }
 
     // 존재하지 않는 ID 조회 시 커스텀 예외를 발생시켜 전역 예외 처리기에서 404 응답 처리
