@@ -2,16 +2,21 @@ package com.example.schedule.service;
 
 import com.example.schedule.common.exception.InvalidPasswordException;
 import com.example.schedule.common.exception.ScheduleNotFoundException;
+import com.example.schedule.dto.CommentResponseDto;
 import com.example.schedule.dto.ScheduleCreateRequestDto;
 import com.example.schedule.dto.ScheduleDeleteRequestDto;
+import com.example.schedule.dto.ScheduleDetailResponseDto;
 import com.example.schedule.dto.ScheduleResponseDto;
 import com.example.schedule.dto.ScheduleUpdateRequestDto;
+import com.example.schedule.entity.Comment;
 import com.example.schedule.entity.Schedule;
+import com.example.schedule.repository.CommentRepository;
 import com.example.schedule.repository.ScheduleRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -24,9 +29,11 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willAnswer;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
@@ -35,6 +42,9 @@ class ScheduleServiceTest {
 
     @Mock
     private ScheduleRepository scheduleRepository;
+
+    @Mock
+    private CommentRepository commentRepository;
 
     @InjectMocks
     private ScheduleService scheduleService;
@@ -151,29 +161,63 @@ class ScheduleServiceTest {
     }
 
     @Test
-    @DisplayName("존재하는 ID로 단건 조회 시 해당 일정의 응답 DTO를 반환한다")
-    void getSchedule_withExistingId_returnsResponse() {
+    @DisplayName("존재하는 ID로 단건 조회 시 댓글 목록이 작성일 오름차순으로 포함된 상세 응답 DTO를 반환한다")
+    void getSchedule_withExistingIdAndComments_returnsDetailResponseWithComments() {
         // given
-        LocalDateTime now = LocalDateTime.of(2026, 11, 26, 10, 0);
-        Schedule schedule = createScheduleEntity(1L, "단건 일정", "상세 내용", "김인성", "secret1234", now, now);
+        LocalDateTime scheduleTime = LocalDateTime.of(2026, 11, 26, 10, 0);
+        LocalDateTime firstCommentTime = LocalDateTime.of(2026, 11, 26, 11, 0);
+        LocalDateTime secondCommentTime = LocalDateTime.of(2026, 11, 26, 12, 0);
+        Schedule schedule = createScheduleEntity(1L, "단건 일정", "상세 내용", "김인성", "secret1234", scheduleTime, scheduleTime);
+        Comment firstComment = createCommentEntity(10L, "첫 번째 댓글", "이영희", "cpw1", 1L, firstCommentTime, firstCommentTime);
+        Comment secondComment = createCommentEntity(11L, "두 번째 댓글", "박철수", "cpw2", 1L, secondCommentTime, secondCommentTime);
 
         given(scheduleRepository.findById(1L)).willReturn(Optional.of(schedule));
+        given(commentRepository.findAllByScheduleIdOrderByCreatedAtAsc(1L))
+                .willReturn(List.of(firstComment, secondComment));
 
         // when
-        ScheduleResponseDto result = scheduleService.getSchedule(1L);
+        ScheduleDetailResponseDto result = scheduleService.getSchedule(1L);
 
         // then
         verify(scheduleRepository).findById(1L);
+        verify(commentRepository).findAllByScheduleIdOrderByCreatedAtAsc(1L);
         assertThat(result.getId()).isEqualTo(1L);
         assertThat(result.getTitle()).isEqualTo("단건 일정");
         assertThat(result.getContents()).isEqualTo("상세 내용");
         assertThat(result.getAuthor()).isEqualTo("김인성");
-        assertThat(result.getCreatedAt()).isEqualTo(now);
-        assertThat(result.getModifiedAt()).isEqualTo(now);
+        assertThat(result.getCreatedAt()).isEqualTo(scheduleTime);
+        assertThat(result.getModifiedAt()).isEqualTo(scheduleTime);
+
+        assertThat(result.getComments()).hasSize(2);
+        assertThat(result.getComments()).extracting(CommentResponseDto::getId).containsExactly(10L, 11L);
+        assertThat(result.getComments()).extracting(CommentResponseDto::getContents)
+                .containsExactly("첫 번째 댓글", "두 번째 댓글");
+        assertThat(result.getComments()).extracting(CommentResponseDto::getCreatedAt)
+                .containsExactly(firstCommentTime, secondCommentTime);
     }
 
     @Test
-    @DisplayName("존재하지 않는 ID로 단건 조회 시 ScheduleNotFoundException이 발생한다")
+    @DisplayName("댓글이 0개인 일정 단건 조회 시 comments는 null이 아닌 빈 리스트를 반환한다")
+    void getSchedule_withExistingIdAndNoComments_returnsDetailResponseWithEmptyComments() {
+        // given
+        LocalDateTime now = LocalDateTime.of(2026, 11, 26, 10, 0);
+        Schedule schedule = createScheduleEntity(1L, "댓글 없는 일정", "상세 내용", "김인성", "secret1234", now, now);
+
+        given(scheduleRepository.findById(1L)).willReturn(Optional.of(schedule));
+        given(commentRepository.findAllByScheduleIdOrderByCreatedAtAsc(1L)).willReturn(List.of());
+
+        // when
+        ScheduleDetailResponseDto result = scheduleService.getSchedule(1L);
+
+        // then
+        verify(scheduleRepository).findById(1L);
+        verify(commentRepository).findAllByScheduleIdOrderByCreatedAtAsc(1L);
+        assertThat(result.getId()).isEqualTo(1L);
+        assertThat(result.getComments()).isNotNull().isEmpty();
+    }
+
+    @Test
+    @DisplayName("존재하지 않는 ID로 단건 조회 시 ScheduleNotFoundException이 발생하고 댓글을 조회하지 않는다")
     void getSchedule_withNonExistingId_throwsScheduleNotFoundException() {
         // given
         given(scheduleRepository.findById(999L)).willReturn(Optional.empty());
@@ -182,6 +226,8 @@ class ScheduleServiceTest {
         assertThatThrownBy(() -> scheduleService.getSchedule(999L))
                 .isInstanceOf(ScheduleNotFoundException.class)
                 .hasMessageContaining("999");
+
+        verify(commentRepository, never()).findAllByScheduleIdOrderByCreatedAtAsc(anyLong());
     }
 
     @Test
@@ -283,8 +329,8 @@ class ScheduleServiceTest {
     }
 
     @Test
-    @DisplayName("일정 삭제 성공 시 비밀번호 검증 후 Repository의 delete를 호출한다")
-    void deleteSchedule_withValidPassword_deletesSchedule() {
+    @DisplayName("일정 삭제 성공 시 비밀번호 검증 후 연관 댓글 일괄 삭제 및 일정 삭제를 순서대로 호출한다")
+    void deleteSchedule_withValidPassword_deletesCommentsAndSchedule() {
         // given
         LocalDateTime now = LocalDateTime.of(2026, 11, 26, 10, 0);
         Schedule schedule = createScheduleEntity(
@@ -298,12 +344,14 @@ class ScheduleServiceTest {
         scheduleService.deleteSchedule(1L, requestDto);
 
         // then
-        verify(scheduleRepository).findById(1L);
-        verify(scheduleRepository).delete(schedule);
+        InOrder inOrder = inOrder(scheduleRepository, commentRepository);
+        inOrder.verify(scheduleRepository).findById(1L);
+        inOrder.verify(commentRepository).deleteAllByScheduleId(1L);
+        inOrder.verify(scheduleRepository).delete(schedule);
     }
 
     @Test
-    @DisplayName("일정 삭제 시 비밀번호가 일치하지 않으면 InvalidPasswordException이 발생하고 삭제를 호출하지 않는다")
+    @DisplayName("일정 삭제 시 비밀번호가 일치하지 않으면 InvalidPasswordException이 발생하고 댓글 및 일정을 삭제하지 않는다")
     void deleteSchedule_withInvalidPassword_throwsInvalidPasswordException() {
         // given
         LocalDateTime now = LocalDateTime.of(2026, 11, 26, 10, 0);
@@ -318,11 +366,12 @@ class ScheduleServiceTest {
         assertThatThrownBy(() -> scheduleService.deleteSchedule(1L, requestDto))
                 .isInstanceOf(InvalidPasswordException.class);
 
+        verify(commentRepository, never()).deleteAllByScheduleId(anyLong());
         verify(scheduleRepository, never()).delete(any(Schedule.class));
     }
 
     @Test
-    @DisplayName("일정 삭제 시 요청 비밀번호가 null이면 InvalidPasswordException이 발생하고 삭제를 호출하지 않는다")
+    @DisplayName("일정 삭제 시 요청 비밀번호가 null이면 InvalidPasswordException이 발생하고 댓글 및 일정을 삭제하지 않는다")
     void deleteSchedule_withNullPassword_throwsInvalidPasswordException() {
         // given
         LocalDateTime now = LocalDateTime.of(2026, 11, 26, 10, 0);
@@ -337,11 +386,12 @@ class ScheduleServiceTest {
         assertThatThrownBy(() -> scheduleService.deleteSchedule(1L, requestDto))
                 .isInstanceOf(InvalidPasswordException.class);
 
+        verify(commentRepository, never()).deleteAllByScheduleId(anyLong());
         verify(scheduleRepository, never()).delete(any(Schedule.class));
     }
 
     @Test
-    @DisplayName("존재하지 않는 ID로 일정 삭제 시 ScheduleNotFoundException이 발생하고 삭제를 호출하지 않는다")
+    @DisplayName("존재하지 않는 ID로 일정 삭제 시 ScheduleNotFoundException이 발생하고 댓글 및 일정을 삭제하지 않는다")
     void deleteSchedule_withNonExistingId_throwsScheduleNotFoundException() {
         // given
         ScheduleDeleteRequestDto requestDto = new ScheduleDeleteRequestDto("secret1234");
@@ -352,7 +402,24 @@ class ScheduleServiceTest {
                 .isInstanceOf(ScheduleNotFoundException.class)
                 .hasMessageContaining("999");
 
+        verify(commentRepository, never()).deleteAllByScheduleId(anyLong());
         verify(scheduleRepository, never()).delete(any(Schedule.class));
+    }
+
+    private Comment createCommentEntity(
+            Long id,
+            String contents,
+            String author,
+            String password,
+            Long scheduleId,
+            LocalDateTime createdAt,
+            LocalDateTime modifiedAt
+    ) {
+        Comment comment = new Comment(contents, author, password, scheduleId);
+        ReflectionTestUtils.setField(comment, "id", id);
+        ReflectionTestUtils.setField(comment, "createdAt", createdAt);
+        ReflectionTestUtils.setField(comment, "modifiedAt", modifiedAt);
+        return comment;
     }
 
     private Schedule createScheduleEntity(

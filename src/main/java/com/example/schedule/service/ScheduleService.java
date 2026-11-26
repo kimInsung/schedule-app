@@ -2,11 +2,15 @@ package com.example.schedule.service;
 
 import com.example.schedule.common.exception.InvalidPasswordException;
 import com.example.schedule.common.exception.ScheduleNotFoundException;
+import com.example.schedule.dto.CommentResponseDto;
 import com.example.schedule.dto.ScheduleCreateRequestDto;
 import com.example.schedule.dto.ScheduleDeleteRequestDto;
+import com.example.schedule.dto.ScheduleDetailResponseDto;
 import com.example.schedule.dto.ScheduleResponseDto;
 import com.example.schedule.dto.ScheduleUpdateRequestDto;
+import com.example.schedule.entity.Comment;
 import com.example.schedule.entity.Schedule;
+import com.example.schedule.repository.CommentRepository;
 import com.example.schedule.repository.ScheduleRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -22,6 +26,7 @@ import java.util.List;
 public class ScheduleService {
 
     private final ScheduleRepository scheduleRepository;
+    private final CommentRepository commentRepository;
 
     /**
      * 새로운 일정을 생성하여 저장한 뒤 응답 DTO를 반환한다.
@@ -65,15 +70,25 @@ public class ScheduleService {
     }
 
     /**
-     * 지정한 ID의 단건 일정을 조회한다.
+     * 지정한 ID의 단건 일정을 연관된 댓글 목록과 함께 조회한다.
+     * 댓글은 작성일 오름차순으로 정렬되며, 댓글이 없을 경우 빈 배열([])을 반환한다.
      *
      * @param id 조회할 일정 ID
-     * @return 비밀번호를 제외한 단건 일정 응답 DTO
+     * @return 비밀번호를 제외한 단건 일정 및 댓글 목록 응답 DTO
      */
     @Transactional(readOnly = true)
-    public ScheduleResponseDto getSchedule(Long id) {
+    public ScheduleDetailResponseDto getSchedule(Long id) {
         Schedule schedule = findScheduleById(id);
-        return ScheduleResponseDto.from(schedule);
+
+        // 단건 조회 전용 응답 DTO로 분리 조립하며, 댓글이 없어도 null 대신 빈 리스트([])를 보장
+        List<Comment> foundComments = commentRepository.findAllByScheduleIdOrderByCreatedAtAsc(id);
+        List<CommentResponseDto> comments = (foundComments == null)
+                ? List.of()
+                : foundComments.stream()
+                        .map(CommentResponseDto::from)
+                        .toList();
+
+        return ScheduleDetailResponseDto.from(schedule, comments);
     }
 
     /**
@@ -100,7 +115,7 @@ public class ScheduleService {
 
     /**
      * 지정한 ID의 일정을 삭제한다.
-     * 일정 존재 여부를 확인하고 비밀번호가 일치하는 경우에만 삭제를 수행한다.
+     * 일정 존재 여부를 확인하고 비밀번호가 일치하는 경우에만 연관 댓글을 일괄 삭제한 뒤 일정을 삭제한다.
      *
      * @param id 삭제할 일정 ID
      * @param requestDto 삭제 요청 정보 (password)
@@ -113,6 +128,8 @@ public class ScheduleService {
         // 본인 확인용 비밀번호 일치 여부를 검증한 뒤에만 삭제 진행
         validatePassword(schedule, requestDto.getPassword());
 
+        // 비밀번호 검증 통과 후 연관된 댓글을 먼저 일괄 삭제하여 데이터 정합성 보장
+        commentRepository.deleteAllByScheduleId(id);
         scheduleRepository.delete(schedule);
     }
 

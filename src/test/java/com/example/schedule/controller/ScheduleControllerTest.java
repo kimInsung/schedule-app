@@ -2,8 +2,10 @@ package com.example.schedule.controller;
 
 import com.example.schedule.common.exception.InvalidPasswordException;
 import com.example.schedule.common.exception.ScheduleNotFoundException;
+import com.example.schedule.dto.CommentResponseDto;
 import com.example.schedule.dto.ScheduleCreateRequestDto;
 import com.example.schedule.dto.ScheduleDeleteRequestDto;
+import com.example.schedule.dto.ScheduleDetailResponseDto;
 import com.example.schedule.dto.ScheduleResponseDto;
 import com.example.schedule.dto.ScheduleUpdateRequestDto;
 import com.example.schedule.service.ScheduleService;
@@ -79,11 +81,12 @@ class ScheduleControllerTest {
                 .andExpect(jsonPath("$.author").value("김인성"))
                 .andExpect(jsonPath("$.createdAt").exists())
                 .andExpect(jsonPath("$.modifiedAt").exists())
-                .andExpect(jsonPath("$.password").doesNotExist());
+                .andExpect(jsonPath("$.password").doesNotExist())
+                .andExpect(jsonPath("$.comments").doesNotExist());
     }
 
     @Test
-    @DisplayName("GET /api/schedules 요청 시 200 OK와 수정일 내림차순 전체 일정 목록(비밀번호 제외)을 반환한다")
+    @DisplayName("GET /api/schedules 요청 시 200 OK와 수정일 내림차순 전체 일정 목록(비밀번호·댓글 제외)을 반환한다")
     void getSchedules_withoutAuthor_returnsOkWithSortedListWithoutPassword() throws Exception {
         // given
         LocalDateTime olderTime = LocalDateTime.of(2026, 11, 25, 9, 0);
@@ -106,11 +109,13 @@ class ScheduleControllerTest {
                 .andExpect(jsonPath("$[0].author").value("이영희"))
                 .andExpect(jsonPath("$[0].modifiedAt").value("2026-11-26T10:00:00"))
                 .andExpect(jsonPath("$[0].password").doesNotExist())
+                .andExpect(jsonPath("$[0].comments").doesNotExist())
                 .andExpect(jsonPath("$[1].id").value(1L))
                 .andExpect(jsonPath("$[1].title").value("이전 일정"))
                 .andExpect(jsonPath("$[1].author").value("김인성"))
                 .andExpect(jsonPath("$[1].modifiedAt").value("2026-11-25T09:00:00"))
-                .andExpect(jsonPath("$[1].password").doesNotExist());
+                .andExpect(jsonPath("$[1].password").doesNotExist())
+                .andExpect(jsonPath("$[1].comments").doesNotExist());
 
         verify(scheduleService).getSchedules(null);
     }
@@ -140,12 +145,18 @@ class ScheduleControllerTest {
     }
 
     @Test
-    @DisplayName("GET /api/schedules/{id} 요청 시 존재하는 일정이면 200 OK와 비밀번호가 제외된 응답을 반환한다")
-    void getSchedule_withExistingId_returnsOkWithoutPassword() throws Exception {
+    @DisplayName("GET /api/schedules/{id} 요청 시 댓글이 포함된 일정이면 200 OK와 작성일 오름차순 댓글 목록(비밀번호 제외)을 반환한다")
+    void getSchedule_withExistingIdAndComments_returnsOkWithCommentsWithoutPassword() throws Exception {
         // given
-        LocalDateTime now = LocalDateTime.of(2026, 11, 26, 10, 0);
-        ScheduleResponseDto responseDto = new ScheduleResponseDto(
-                1L, "단건 일정", "상세 조회 테스트", "김인성", now, now
+        LocalDateTime scheduleTime = LocalDateTime.of(2026, 11, 26, 10, 0);
+        LocalDateTime firstCommentTime = LocalDateTime.of(2026, 11, 26, 11, 0);
+        LocalDateTime secondCommentTime = LocalDateTime.of(2026, 11, 26, 12, 0);
+        List<CommentResponseDto> comments = List.of(
+                new CommentResponseDto(10L, 1L, "첫 번째 댓글", "이영희", firstCommentTime, firstCommentTime),
+                new CommentResponseDto(11L, 1L, "두 번째 댓글", "박철수", secondCommentTime, secondCommentTime)
+        );
+        ScheduleDetailResponseDto responseDto = new ScheduleDetailResponseDto(
+                1L, "단건 일정", "상세 조회 테스트", "김인성", scheduleTime, scheduleTime, comments
         );
 
         given(scheduleService.getSchedule(1L)).willReturn(responseDto);
@@ -157,9 +168,47 @@ class ScheduleControllerTest {
                 .andExpect(jsonPath("$.title").value("단건 일정"))
                 .andExpect(jsonPath("$.contents").value("상세 조회 테스트"))
                 .andExpect(jsonPath("$.author").value("김인성"))
-                .andExpect(jsonPath("$.createdAt").exists())
-                .andExpect(jsonPath("$.modifiedAt").exists())
-                .andExpect(jsonPath("$.password").doesNotExist());
+                .andExpect(jsonPath("$.createdAt").value("2026-11-26T10:00:00"))
+                .andExpect(jsonPath("$.modifiedAt").value("2026-11-26T10:00:00"))
+                .andExpect(jsonPath("$.password").doesNotExist())
+                .andExpect(jsonPath("$.comments").isArray())
+                .andExpect(jsonPath("$.comments.length()").value(2))
+                .andExpect(jsonPath("$.comments[0].id").value(10L))
+                .andExpect(jsonPath("$.comments[0].scheduleId").value(1L))
+                .andExpect(jsonPath("$.comments[0].contents").value("첫 번째 댓글"))
+                .andExpect(jsonPath("$.comments[0].author").value("이영희"))
+                .andExpect(jsonPath("$.comments[0].createdAt").value("2026-11-26T11:00:00"))
+                .andExpect(jsonPath("$.comments[0].modifiedAt").value("2026-11-26T11:00:00"))
+                .andExpect(jsonPath("$.comments[0].password").doesNotExist())
+                .andExpect(jsonPath("$.comments[1].id").value(11L))
+                .andExpect(jsonPath("$.comments[1].scheduleId").value(1L))
+                .andExpect(jsonPath("$.comments[1].contents").value("두 번째 댓글"))
+                .andExpect(jsonPath("$.comments[1].author").value("박철수"))
+                .andExpect(jsonPath("$.comments[1].createdAt").value("2026-11-26T12:00:00"))
+                .andExpect(jsonPath("$.comments[1].modifiedAt").value("2026-11-26T12:00:00"))
+                .andExpect(jsonPath("$.comments[1].password").doesNotExist());
+
+        verify(scheduleService).getSchedule(1L);
+    }
+
+    @Test
+    @DisplayName("GET /api/schedules/{id} 요청 시 댓글이 0개인 일정이면 200 OK와 빈 배열([]) comments를 반환한다")
+    void getSchedule_withExistingIdAndNoComments_returnsOkWithEmptyCommentsArray() throws Exception {
+        // given
+        LocalDateTime now = LocalDateTime.of(2026, 11, 26, 10, 0);
+        ScheduleDetailResponseDto responseDto = new ScheduleDetailResponseDto(
+                1L, "댓글 없는 일정", "상세 조회 테스트", "김인성", now, now, List.of()
+        );
+
+        given(scheduleService.getSchedule(1L)).willReturn(responseDto);
+
+        // when & then
+        mockMvc.perform(get("/api/schedules/1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(1L))
+                .andExpect(jsonPath("$.password").doesNotExist())
+                .andExpect(jsonPath("$.comments").isArray())
+                .andExpect(jsonPath("$.comments.length()").value(0));
 
         verify(scheduleService).getSchedule(1L);
     }
@@ -205,7 +254,8 @@ class ScheduleControllerTest {
                 .andExpect(jsonPath("$.author").value("이영희"))
                 .andExpect(jsonPath("$.createdAt").value("2026-11-25T09:00:00"))
                 .andExpect(jsonPath("$.modifiedAt").value("2026-11-26T10:30:00"))
-                .andExpect(jsonPath("$.password").doesNotExist());
+                .andExpect(jsonPath("$.password").doesNotExist())
+                .andExpect(jsonPath("$.comments").doesNotExist());
 
         verify(scheduleService).updateSchedule(eq(1L), any(ScheduleUpdateRequestDto.class));
     }

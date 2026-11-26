@@ -2,6 +2,7 @@ package com.example.schedule.controller;
 
 import com.example.schedule.dto.ScheduleCreateRequestDto;
 import com.example.schedule.dto.ScheduleDeleteRequestDto;
+import com.example.schedule.dto.ScheduleDetailResponseDto;
 import com.example.schedule.dto.ScheduleResponseDto;
 import com.example.schedule.dto.ScheduleUpdateRequestDto;
 import com.example.schedule.service.ScheduleService;
@@ -59,15 +60,15 @@ public class ScheduleController {
     }
 
     /**
-     * 지정한 ID의 단건 일정을 조회한다.
+     * 지정한 ID의 단건 일정을 연관된 댓글 목록과 함께 조회한다.
      *
      * @param id 조회할 일정 ID
-     * @return 조회된 일정 정보와 HTTP 200 OK 상태 코드
+     * @return 조회된 단건 일정 상세 정보(댓글 포함)와 HTTP 200 OK 상태 코드
      */
     @GetMapping("/{id}")
-    public ResponseEntity<ScheduleResponseDto> getSchedule(@PathVariable Long id) {
-        // 단건 조회 및 미존재 예외 처리는 서비스 계층에 위임하고 DTO만 반환
-        ScheduleResponseDto responseDto = scheduleService.getSchedule(id);
+    public ResponseEntity<ScheduleDetailResponseDto> getSchedule(@PathVariable Long id) {
+        // 단건 조회 시에만 댓글 목록이 포함된 ScheduleDetailResponseDto 반환
+        ScheduleDetailResponseDto responseDto = scheduleService.getSchedule(id);
         return ResponseEntity.ok(responseDto);
     }
 
