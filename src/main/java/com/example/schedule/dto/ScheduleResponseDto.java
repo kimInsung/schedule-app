@@ -6,7 +6,7 @@ import lombok.Getter;
 import java.time.LocalDateTime;
 
 /**
- * 일정 생성 결과를 클라이언트에 반환하는 응답 DTO.
+ * 일정 정보를 클라이언트에 반환하는 응답 DTO.
  * 보안상 비밀번호(password) 필드는 응답에서 완전히 제외한다.
  */
 @Getter

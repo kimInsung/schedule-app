@@ -1,5 +1,6 @@
 package com.example.schedule.controller;
 
+import com.example.schedule.common.exception.ScheduleNotFoundException;
 import com.example.schedule.dto.ScheduleCreateRequestDto;
 import com.example.schedule.dto.ScheduleResponseDto;
 import com.example.schedule.service.ScheduleService;
@@ -13,9 +14,13 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.verify;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -66,5 +71,101 @@ class ScheduleControllerTest {
                 .andExpect(jsonPath("$.createdAt").exists())
                 .andExpect(jsonPath("$.modifiedAt").exists())
                 .andExpect(jsonPath("$.password").doesNotExist());
+    }
+
+    @Test
+    @DisplayName("GET /api/schedules 요청 시 200 OK와 수정일 내림차순 전체 일정 목록(비밀번호 제외)을 반환한다")
+    void getSchedules_withoutAuthor_returnsOkWithSortedListWithoutPassword() throws Exception {
+        // given
+        LocalDateTime olderTime = LocalDateTime.of(2026, 11, 25, 9, 0);
+        LocalDateTime newerTime = LocalDateTime.of(2026, 11, 26, 10, 0);
+        ScheduleResponseDto newerDto = new ScheduleResponseDto(
+                2L, "최신 일정", "내용2", "이영희", olderTime, newerTime
+        );
+        ScheduleResponseDto olderDto = new ScheduleResponseDto(
+                1L, "이전 일정", "내용1", "김인성", olderTime, olderTime
+        );
+
+        given(scheduleService.getSchedules(isNull())).willReturn(List.of(newerDto, olderDto));
+
+        // when & then
+        mockMvc.perform(get("/api/schedules"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(2))
+                .andExpect(jsonPath("$[0].id").value(2L))
+                .andExpect(jsonPath("$[0].title").value("최신 일정"))
+                .andExpect(jsonPath("$[0].author").value("이영희"))
+                .andExpect(jsonPath("$[0].modifiedAt").value("2026-11-26T10:00:00"))
+                .andExpect(jsonPath("$[0].password").doesNotExist())
+                .andExpect(jsonPath("$[1].id").value(1L))
+                .andExpect(jsonPath("$[1].title").value("이전 일정"))
+                .andExpect(jsonPath("$[1].author").value("김인성"))
+                .andExpect(jsonPath("$[1].modifiedAt").value("2026-11-25T09:00:00"))
+                .andExpect(jsonPath("$[1].password").doesNotExist());
+
+        verify(scheduleService).getSchedules(null);
+    }
+
+    @Test
+    @DisplayName("GET /api/schedules?author=김인성 요청 시 200 OK와 해당 작성자 일정 목록(비밀번호 제외)을 반환한다")
+    void getSchedules_withAuthor_returnsOkWithFilteredListWithoutPassword() throws Exception {
+        // given
+        LocalDateTime now = LocalDateTime.of(2026, 11, 26, 10, 0);
+        ScheduleResponseDto filteredDto = new ScheduleResponseDto(
+                1L, "김인성 일정", "작성자 필터 테스트", "김인성", now, now
+        );
+
+        given(scheduleService.getSchedules("김인성")).willReturn(List.of(filteredDto));
+
+        // when & then
+        mockMvc.perform(get("/api/schedules")
+                        .param("author", "김인성"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].id").value(1L))
+                .andExpect(jsonPath("$[0].title").value("김인성 일정"))
+                .andExpect(jsonPath("$[0].author").value("김인성"))
+                .andExpect(jsonPath("$[0].password").doesNotExist());
+
+        verify(scheduleService).getSchedules("김인성");
+    }
+
+    @Test
+    @DisplayName("GET /api/schedules/{id} 요청 시 존재하는 일정이면 200 OK와 비밀번호가 제외된 응답을 반환한다")
+    void getSchedule_withExistingId_returnsOkWithoutPassword() throws Exception {
+        // given
+        LocalDateTime now = LocalDateTime.of(2026, 11, 26, 10, 0);
+        ScheduleResponseDto responseDto = new ScheduleResponseDto(
+                1L, "단건 일정", "상세 조회 테스트", "김인성", now, now
+        );
+
+        given(scheduleService.getSchedule(1L)).willReturn(responseDto);
+
+        // when & then
+        mockMvc.perform(get("/api/schedules/1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(1L))
+                .andExpect(jsonPath("$.title").value("단건 일정"))
+                .andExpect(jsonPath("$.contents").value("상세 조회 테스트"))
+                .andExpect(jsonPath("$.author").value("김인성"))
+                .andExpect(jsonPath("$.createdAt").exists())
+                .andExpect(jsonPath("$.modifiedAt").exists())
+                .andExpect(jsonPath("$.password").doesNotExist());
+
+        verify(scheduleService).getSchedule(1L);
+    }
+
+    @Test
+    @DisplayName("GET /api/schedules/{id} 요청 시 존재하지 않는 ID면 404 Not Found를 반환한다")
+    void getSchedule_withNonExistingId_returnsNotFound() throws Exception {
+        // given
+        given(scheduleService.getSchedule(999L)).willThrow(new ScheduleNotFoundException(999L));
+
+        // when & then
+        mockMvc.perform(get("/api/schedules/999"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.status").value(404))
+                .andExpect(jsonPath("$.error").value("Not Found"))
+                .andExpect(jsonPath("$.message").value("해당 일정을 찾을 수 없습니다. id=999"));
     }
 }

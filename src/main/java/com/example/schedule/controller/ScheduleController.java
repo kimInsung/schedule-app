@@ -6,10 +6,15 @@ import com.example.schedule.service.ScheduleService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.util.List;
 
 /**
  * 일정 HTTP 요청을 처리하는 Controller 계층.
@@ -32,5 +37,33 @@ public class ScheduleController {
         // 서비스 계층에 일정 생성 위임 후 201 Created 상태 코드와 함께 응답
         ScheduleResponseDto responseDto = scheduleService.createSchedule(requestDto);
         return ResponseEntity.status(HttpStatus.CREATED).body(responseDto);
+    }
+
+    /**
+     * 전체 일정 또는 특정 작성자의 일정 목록을 조회한다.
+     *
+     * @param author 선택적 작성자명 쿼리 파라미터
+     * @return 수정일 기준 내림차순 정렬된 일정 목록과 HTTP 200 OK 상태 코드
+     */
+    @GetMapping
+    public ResponseEntity<List<ScheduleResponseDto>> getSchedules(
+            @RequestParam(required = false) String author
+    ) {
+        // 작성자명 필터링 및 정렬은 서비스 계층에 위임하고 DTO 목록만 반환
+        List<ScheduleResponseDto> responseDtos = scheduleService.getSchedules(author);
+        return ResponseEntity.ok(responseDtos);
+    }
+
+    /**
+     * 지정한 ID의 단건 일정을 조회한다.
+     *
+     * @param id 조회할 일정 ID
+     * @return 조회된 일정 정보와 HTTP 200 OK 상태 코드
+     */
+    @GetMapping("/{id}")
+    public ResponseEntity<ScheduleResponseDto> getSchedule(@PathVariable Long id) {
+        // 단건 조회 및 미존재 예외 처리는 서비스 계층에 위임하고 DTO만 반환
+        ScheduleResponseDto responseDto = scheduleService.getSchedule(id);
+        return ResponseEntity.ok(responseDto);
     }
 }
